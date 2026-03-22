@@ -1,0 +1,191 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── ENUMS ───────────────────────────────────────────────────────────────────
+
+enum Role {
+  CUSTOMER
+  BARBER
+  ADMIN
+}
+
+enum BookingStatus {
+  PENDING    // Chờ xác nhận
+  CONFIRMED  // Đã xác nhận
+  IN_PROGRESS // Đang thực hiện
+  COMPLETED  // Hoàn thành
+  CANCELLED  // Đã huỷ
+  NO_SHOW    // Không đến
+}
+
+enum DayOfWeek {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+  SUNDAY
+}
+
+// ─── MODELS ──────────────────────────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  phone        String?  @unique
+  password     String
+  name         String
+  avatarUrl    String?
+  role         Role     @default(CUSTOMER)
+  isActive     Boolean  @default(true)
+  refreshToken String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  barberProfile Barber?
+  bookings      Booking[]
+
+  @@map("users")
+}
+
+model Barber {
+  id          String  @id @default(uuid())
+  userId      String  @unique
+  bio         String?
+  specialties String[] // ["fade", "beard trim", "color"]
+  experience  Int     @default(0) // years
+  avatarUrl   String?
+  isAvailable Boolean @default(true)
+  rating      Float   @default(0)
+  totalReviews Int    @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  schedules BarberSchedule[]
+  bookings  Booking[]
+  timeOffs  BarberTimeOff[]
+  reviews   Review[]
+
+  @@map("barbers")
+}
+
+model BarberSchedule {
+  id         String    @id @default(uuid())
+  barberId   String
+  dayOfWeek  DayOfWeek
+  startTime  String    // "08:00"
+  endTime    String    // "18:00"
+  isWorking  Boolean   @default(true)
+  slotDuration Int     @default(30) // minutes per slot
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  barber Barber @relation(fields: [barberId], references: [id], onDelete: Cascade)
+
+  @@unique([barberId, dayOfWeek])
+  @@map("barber_schedules")
+}
+
+model BarberTimeOff {
+  id        String   @id @default(uuid())
+  barberId  String
+  date      DateTime @db.Date
+  reason    String?
+  allDay    Boolean  @default(true)
+  startTime String?  // if not all day
+  endTime   String?  // if not all day
+
+  createdAt DateTime @default(now())
+
+  barber Barber @relation(fields: [barberId], references: [id], onDelete: Cascade)
+
+  @@map("barber_time_offs")
+}
+
+model Service {
+  id          String  @id @default(uuid())
+  name        String
+  description String?
+  price       Float
+  duration    Int     // minutes
+  imageUrl    String?
+  isActive    Boolean @default(true)
+  category    String  @default("haircut") // haircut, beard, combo, other
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bookingServices BookingService[]
+
+  @@map("services")
+}
+
+model Booking {
+  id          String        @id @default(uuid())
+  customerId  String
+  barberId    String
+  bookingDate DateTime      @db.Date
+  startTime   String        // "10:00"
+  endTime     String        // "10:30"
+  status      BookingStatus @default(PENDING)
+  totalPrice  Float
+  totalDuration Int         // minutes
+  notes       String?
+  cancelReason String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  customer User             @relation(fields: [customerId], references: [id])
+  barber   Barber           @relation(fields: [barberId], references: [id])
+  services BookingService[]
+  review   Review?
+
+  @@map("bookings")
+}
+
+model BookingService {
+  id        String @id @default(uuid())
+  bookingId String
+  serviceId String
+  price     Float  // snapshot giá tại thời điểm đặt
+  duration  Int    // snapshot thời gian
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  service Service @relation(fields: [serviceId], references: [id])
+
+  @@unique([bookingId, serviceId])
+  @@map("booking_services")
+}
+
+model Review {
+  id        String @id @default(uuid())
+  bookingId String @unique
+  barberId  String
+  rating    Int    // 1-5
+  comment   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  booking Booking @relation(fields: [bookingId], references: [id])
+  barber  Barber  @relation(fields: [barberId], references: [id])
+
+  @@map("reviews")
+}
